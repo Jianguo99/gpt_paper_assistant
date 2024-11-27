@@ -16,6 +16,7 @@ from filter_papers import filter_by_author, filter_by_gpt
 from parse_json_to_md import render_md_string
 from push_to_slack import push_to_slack
 from arxiv_scraper import EnhancedJSONEncoder
+import dataclasses
 
 T = TypeVar("T")
 
@@ -181,25 +182,25 @@ def parse_authors(lines):
 
 
 if __name__ == "__main__":
+    from utils import ContinuousLLMCaller,LocalLLMCaller
     # now load config.ini
     config = configparser.ConfigParser()
-    config.read("configs/config.ini")
+    # config.read("configs/config.ini")
+    config.read("configs/config_llm.ini")
 
     S2_API_KEY = os.environ.get("S2_KEY")
-    OAI_KEY = os.environ.get("OAI_KEY")
-    if OAI_KEY is None:
-        raise ValueError(
-            "OpenAI key is not set - please set OAI_KEY to your OpenAI key"
-        )
-    openai_client = OpenAI(api_key=OAI_KEY)
+    
+    
     # load the author list
     with io.open("configs/authors.txt", "r") as fopen:
         author_names, author_ids = parse_authors(fopen.readlines())
     author_id_set = set(author_ids)
 
     papers = list(get_papers_from_arxiv(config))
+    
+    
     # dump all papers for debugging
-
+    
     all_authors = set()
     for paper in papers:
         all_authors.update(set(paper.authors))
@@ -220,15 +221,47 @@ if __name__ == "__main__":
             config["OUTPUT"]["output_path"] + "author_id_set.debug.json", "w"
         ) as outfile:
             json.dump(list(author_id_set), outfile, cls=EnhancedJSONEncoder, indent=4)
+                
+                
+    if config["FILTERING"].getboolean("author_match") :
+        
 
-    selected_papers, all_papers, sort_dict = filter_by_author(
-        all_authors, papers, author_id_set, config
-    )
+        # 感觉作者名字进行过滤
+        selected_papers, all_papers, sort_dict = filter_by_author(
+            all_authors, papers, author_id_set, config
+        )
+    else:
+        selected_papers = {}  # pass to output
+        all_papers = {}  # dict for later filtering
+        sort_dict = {}  # dict storing key and score
+
+        # author based selection
+        for paper in papers:
+            all_papers[paper.arxiv_id] = paper
+            selected_papers[paper.arxiv_id] = {
+                **dataclasses.asdict(paper),
+                **{"COMMENT": "Author match"},
+            }
+            sort_dict[paper.arxiv_id] = float(
+                config["SELECTION"]["author_match_score"]
+            )
+            
+    if config["SELECTION"].getboolean("local_llm"):
+        llm_generator = LocalLLMCaller(config["SELECTION"]['local_model'],max_length = 2048)
+    else:
+        llm_generator = ContinuousLLMCaller(
+            model=config["SELECTION"]['remote_model'],
+            base_retry_delay=2.0,
+            max_retry_delay=60.0,
+            jitter=0.1,
+            max_attempts=3  # 设置最大尝试次数
+        )
+    
     filter_by_gpt(
         all_authors,
         papers,
         config,
-        openai_client,
+        llm_generator,
         all_papers,
         selected_papers,
         sort_dict,
@@ -243,13 +276,14 @@ if __name__ == "__main__":
         print(sort_dict)
         print(selected_papers)
 
+    output_filename = config["OUTPUT"]["filename"]
     # pick endpoints and push the summaries
     if len(papers) > 0:
         if config["OUTPUT"].getboolean("dump_json"):
-            with open(config["OUTPUT"]["output_path"] + "output.json", "w") as outfile:
+            with open(config["OUTPUT"]["output_path"] + f"output_{output_filename}.json", "w") as outfile:
                 json.dump(selected_papers, outfile, indent=4)
         if config["OUTPUT"].getboolean("dump_md"):
-            with open(config["OUTPUT"]["output_path"] + "output.md", "w") as f:
+            with open(config["OUTPUT"]["output_path"] + f"output_{output_filename}.md", "w") as f:
                 f.write(render_md_string(selected_papers))
         # only push to slack for non-empty dicts
         if config["OUTPUT"].getboolean("push_to_slack"):

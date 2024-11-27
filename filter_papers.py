@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from arxiv_scraper import Paper
 from arxiv_scraper import EnhancedJSONEncoder
-
+from utils import ContinuousLLMCaller
 
 def filter_by_author(all_authors, papers, author_targets, config):
     # filter and parse the papers
@@ -54,25 +54,20 @@ def filter_papers_by_hindex(all_authors, papers, config):
 def calc_price(model, usage):
     if model == "gpt-4-1106-preview":
         return (0.01 * usage.prompt_tokens + 0.03 * usage.completion_tokens) / 1000.0
-    if model == "gpt-4":
+    elif model == "gpt-4":
         return (0.03 * usage.prompt_tokens + 0.06 * usage.completion_tokens) / 1000.0
-    if (model == "gpt-3.5-turbo") or (model == "gpt-3.5-turbo-1106"):
+    elif (model == "gpt-3.5-turbo") or (model == "gpt-3.5-turbo-1106"):
         return (0.0015 * usage.prompt_tokens + 0.002 * usage.completion_tokens) / 1000.0
+    else:
+        print("Unknown model, the cost is 0.")
+        return 0.0
 
 
-@retry.retry(tries=3, delay=2)
-def call_chatgpt(full_prompt, openai_client, model):
-    return openai_client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.0,
-        seed=0,
-    )
 
-
-def run_and_parse_chatgpt(full_prompt, openai_client, config):
+def run_and_parse_chatgpt(full_prompt, llm_generator, config):
     # just runs the chatgpt prompt, tries to parse the resulting JSON
-    completion = call_chatgpt(full_prompt, openai_client, config["SELECTION"]["model"])
+    completion = llm_generator.get_completion(full_prompt) 
+    
     out_text = completion.choices[0].message.content
     out_text = re.sub("```jsonl\n", "", out_text)
     out_text = re.sub("```", "", out_text)
@@ -119,7 +114,7 @@ def batched(items, batch_size):
 
 
 def filter_papers_by_title(
-    papers, config, openai_client, base_prompt, criterion
+    papers, config, llm_generator, base_prompt, criterion
 ) -> List[Paper]:
     filter_postfix = 'Identify any papers that are absolutely and completely irrelavent to the criteria, and you are absolutely sure your friend will not enjoy, formatted as a list of arxiv ids like ["ID1", "ID2", "ID3"..]. Be extremely cautious, and if you are unsure at all, do not add a paper in this list. You will check it in detail later.\n Directly respond with the list, do not add ANY extra text before or after the list. Even if every paper seems irrelevant, please keep at least TWO papers'
     batches_of_papers = batched(papers, 20)
@@ -127,13 +122,14 @@ def filter_papers_by_title(
     cost = 0
     for batch in batches_of_papers:
         papers_string = "".join([paper_to_titles(paper) for paper in batch])
-        full_prompt = (
-            base_prompt + "\n " + criterion + "\n" + papers_string + filter_postfix
-        )
-        model = config["SELECTION"]["model"]
-        completion = call_chatgpt(full_prompt, openai_client, model)
-        cost += calc_price(model, completion.usage)
-        out_text = completion.choices[0].message.content
+        full_prompt = base_prompt + "\n " + criterion + "\n" + papers_string + filter_postfix
+        completion = llm_generator.get_completion(full_prompt) 
+        if config["SELECTION"].getboolean("local_llm"):
+            cost += 0
+            out_text = completion
+        else:
+            cost += calc_price(config["SELECTION"]["remote_model"], completion.usage)
+            out_text = completion.choices[0].message.content
         try:
             filtered_set = set(json.loads(out_text))
             for paper in batch:
@@ -170,68 +166,68 @@ def run_on_batch(
 
 
 def filter_by_gpt(
-    all_authors, papers, config, openai_client, all_papers, selected_papers, sort_dict
+    all_authors, papers, config, llm_generator, all_papers, selected_papers, sort_dict
 ):
     # deal with config parsing
     with open("configs/base_prompt.txt", "r") as f:
         base_prompt = f.read()
-    with open("configs/paper_topics.txt", "r") as f:
+    with open(config["FILTERING"]["topic"], "r") as f:
         criterion = f.read()
     with open("configs/postfix_prompt.txt", "r") as f:
         postfix_prompt = f.read()
     all_cost = 0
-    if config["SELECTION"].getboolean("run_openai"):
-        # filter first by hindex of authors to reduce costs.
-        paper_list = filter_papers_by_hindex(all_authors, papers, config)
-        if config["OUTPUT"].getboolean("debug_messages"):
-            print(str(len(paper_list)) + " papers after hindex filtering")
-        cost = 0
-        paper_list, cost = filter_papers_by_title(
-            paper_list, config, openai_client, base_prompt, criterion
+    
+    # filter first by hindex of authors to reduce costs.
+    paper_list = filter_papers_by_hindex(all_authors, papers, config)
+    if config["OUTPUT"].getboolean("debug_messages"):
+        print(str(len(paper_list)) + " papers after hindex filtering")
+    cost = 0
+    paper_list, cost = filter_papers_by_title(
+        paper_list, config, llm_generator, base_prompt, criterion
+    )
+    if config["OUTPUT"].getboolean("debug_messages"):
+        print(
+            str(len(paper_list))
+            + " papers after title filtering with cost of $"
+            + str(cost)
         )
-        if config["OUTPUT"].getboolean("debug_messages"):
-            print(
-                str(len(paper_list))
-                + " papers after title filtering with cost of $"
-                + str(cost)
-            )
-        all_cost += cost
+    all_cost += cost
 
-        # batch the remaining papers and invoke GPT
-        batch_of_papers = batched(paper_list, int(config["SELECTION"]["batch_size"]))
-        scored_batches = []
-        for batch in tqdm(batch_of_papers):
-            scored_in_batch = []
-            json_dicts, cost = run_on_batch(
-                batch, base_prompt, criterion, postfix_prompt, openai_client, config
+    # batch the remaining papers and invoke GPT
+    batch_of_papers = batched(paper_list, int(config["SELECTION"]["batch_size"]))
+    scored_batches = []
+    for batch in tqdm(batch_of_papers):
+        scored_in_batch = []
+        json_dicts, cost = run_on_batch(
+            batch, base_prompt, criterion, postfix_prompt, openai_client, config
+        )
+        all_cost += cost
+        for jdict in json_dicts:
+            if (
+                int(jdict["RELEVANCE"])
+                >= int(config["FILTERING"]["relevance_cutoff"])
+                and jdict["NOVELTY"] >= int(config["FILTERING"]["novelty_cutoff"])
+                and jdict["ARXIVID"] in all_papers
+            ):
+                selected_papers[jdict["ARXIVID"]] = {
+                    **dataclasses.asdict(all_papers[jdict["ARXIVID"]]),
+                    **jdict,
+                }
+                sort_dict[jdict["ARXIVID"]] = jdict["RELEVANCE"] + jdict["NOVELTY"]
+            scored_in_batch.append(
+                {
+                    **dataclasses.asdict(all_papers[jdict["ARXIVID"]]),
+                    **jdict,
+                }
             )
-            all_cost += cost
-            for jdict in json_dicts:
-                if (
-                    int(jdict["RELEVANCE"])
-                    >= int(config["FILTERING"]["relevance_cutoff"])
-                    and jdict["NOVELTY"] >= int(config["FILTERING"]["novelty_cutoff"])
-                    and jdict["ARXIVID"] in all_papers
-                ):
-                    selected_papers[jdict["ARXIVID"]] = {
-                        **dataclasses.asdict(all_papers[jdict["ARXIVID"]]),
-                        **jdict,
-                    }
-                    sort_dict[jdict["ARXIVID"]] = jdict["RELEVANCE"] + jdict["NOVELTY"]
-                scored_in_batch.append(
-                    {
-                        **dataclasses.asdict(all_papers[jdict["ARXIVID"]]),
-                        **jdict,
-                    }
-                )
-            scored_batches.append(scored_in_batch)
-        if config["OUTPUT"].getboolean("dump_debug_file"):
-            with open(
-                config["OUTPUT"]["output_path"] + "gpt_paper_batches.debug.json", "w"
-            ) as outfile:
-                json.dump(scored_batches, outfile, cls=EnhancedJSONEncoder, indent=4)
-        if config["OUTPUT"].getboolean("debug_messages"):
-            print("Total cost: $" + str(all_cost))
+        scored_batches.append(scored_in_batch)
+    if config["OUTPUT"].getboolean("dump_debug_file"):
+        with open(
+            config["OUTPUT"]["output_path"] + "gpt_paper_batches.debug.json", "w"
+        ) as outfile:
+            json.dump(scored_batches, outfile, cls=EnhancedJSONEncoder, indent=4)
+    if config["OUTPUT"].getboolean("debug_messages"):
+        print("Total cost: $" + str(all_cost))
 
 
 if __name__ == "__main__":

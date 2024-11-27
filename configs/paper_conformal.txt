@@ -1,0 +1,9 @@
+1. Conformal Prediction
+   - Relevant: papers that study Conformal Prediction methods
+
+
+When recommending papers, remember the reader is particularly interested in:
+   - Work with rigorous theoretical derivations and guarantees
+   - Research proposing novel statistical frameworks
+   - Key findings about LLM uncertainty
+   - Innovative mathematical methods for solving text generation challenges
