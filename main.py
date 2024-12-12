@@ -97,7 +97,7 @@ def get_author_batch(
         return response.json()
 
 
-@retry(tries=3, delay=2.0)
+@retry(tries=3, delay=3.0)
 def get_one_author(session, author: str, S2_API_KEY: str) -> str:
     # query the right endpoint https://api.semanticscholar.org/graph/v1/author/search?query=adam+smith
     params = {"query": author, "fields": "authorId,name,hIndex", "limit": "10"}
@@ -280,8 +280,12 @@ if __name__ == "__main__":
     # pick endpoints and push the summaries
     if len(papers) > 0:
         if config["OUTPUT"].getboolean("dump_json"):
-            with open(config["OUTPUT"]["output_path"] + f"output_{output_filename}.json", "w") as outfile:
-                json.dump(selected_papers, outfile, indent=4)
+            if config["OUTPUT"]["start_date"]:
+                with open(config["OUTPUT"]["output_path"] + f"output_"+config["OUTPUT"]["start_date"]+ "_" + config["OUTPUT"]["end_date"]+".json", "w") as outfile:
+                    json.dump(selected_papers, outfile, indent=4)
+            else:
+                with open(config["OUTPUT"]["output_path"] + f"output_{output_filename}.json", "w") as outfile:
+                    json.dump(selected_papers, outfile, indent=4)
         if config["OUTPUT"].getboolean("dump_md"):
             with open(config["OUTPUT"]["output_path"] + f"output_{output_filename}.md", "w") as f:
                 f.write(render_md_string(selected_papers))

@@ -12,6 +12,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
+def print_config(config):
+    for section in config.sections():
+        print(f"[{section}]")
+        for key, value in config.items(section):
+            print(f"{key} = {value}")
+        print()
+
 class EnhancedJSONEncoder(json.JSONEncoder):
     def default(self, o):
         if dataclasses.is_dataclass(o):
@@ -73,12 +80,16 @@ def get_papers_from_arxiv_api(area: str, timestamp, last_id) -> List[Paper]:
 
 def get_papers_from_arxiv_rss(area: str, config: Optional[dict]) -> List[Paper]:
     # get the feed from http://export.arxiv.org/rss/ and use the updated timestamp to avoid duplicates
-    updated = datetime.now(timezone.utc) - timedelta(days=7)
+    updated = datetime.now(timezone.utc) - timedelta(days=14)
     # format this into the string format 'Fri, 03 Nov 2023 00:30:00 GMT'
     updated_string = updated.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    config["OUTPUT"]["start_date"] =   updated.strftime("%d-%m-%Y")
+    config["OUTPUT"]["end_date"] =  datetime.now(timezone.utc).strftime("%d-%m-%Y")
+    # print_config(config)
     feed = feedparser.parse(
         f"http://export.arxiv.org/rss/{area}", modified=updated_string
     )
+    # print("Feed status:", feed.status)
     if feed.status == 304:
         if (config is not None) and config["OUTPUT"]["debug_messages"]:
             print("No new papers since " + updated_string + " for " + area)
