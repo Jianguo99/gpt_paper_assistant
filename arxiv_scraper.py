@@ -43,7 +43,6 @@ def is_earlier(ts1, ts2):
     # compares two arxiv ids, returns true if ts1 is older than ts2
     return int(ts1.replace(".", "")) < int(ts2.replace(".", ""))
 
-
 def get_papers_from_arxiv_api(area: str, timestamp, last_id) -> List[Paper]:
     # look for papers that are newer than the newest papers in RSS.
     # we do this by looking at last_id and grabbing everything newer.
@@ -80,7 +79,7 @@ def get_papers_from_arxiv_api(area: str, timestamp, last_id) -> List[Paper]:
 
 def get_papers_from_arxiv_rss(area: str, config: Optional[dict]) -> List[Paper]:
     # get the feed from http://export.arxiv.org/rss/ and use the updated timestamp to avoid duplicates
-    updated = datetime.now(timezone.utc) - timedelta(days=14)
+    updated = datetime.now(timezone.utc) - timedelta(days=7)
     # format this into the string format 'Fri, 03 Nov 2023 00:30:00 GMT'
     updated_string = updated.strftime("%a, %d %b %Y %H:%M:%S GMT")
     config["OUTPUT"]["start_date"] =   updated.strftime("%d-%m-%Y")
