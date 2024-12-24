@@ -79,7 +79,7 @@ def get_papers_from_arxiv_api(area: str, timestamp, last_id) -> List[Paper]:
 
 def get_papers_from_arxiv_rss(area: str, config: Optional[dict]) -> List[Paper]:
     # get the feed from http://export.arxiv.org/rss/ and use the updated timestamp to avoid duplicates
-    updated = datetime.now(timezone.utc) - timedelta(days=7)
+    updated = datetime.now(timezone.utc) - timedelta(days=int(config["FILTERING"]["days"]))
     # format this into the string format 'Fri, 03 Nov 2023 00:30:00 GMT'
     updated_string = updated.strftime("%a, %d %b %Y %H:%M:%S GMT")
     config["OUTPUT"]["start_date"] =   updated.strftime("%d-%m-%Y")

@@ -1,23 +1,25 @@
-Here is the prompt in English:
+# Research Areas of Interest
 
-1. Large Language Model Inference Acceleration
+## Large Language Model Based Optimization
+- Novel approaches using LLMs as optimization solvers
+- Frameworks combining LLMs with traditional optimization methods
+- Applications of LLMs in solving complex optimization problems
 
-Relevant: Novel inference acceleration frameworks such as dynamic batching, adaptive computation, model compression and quantization. Focus on acceleration algorithms and architectural innovations that significantly improve throughput.
+## Complex Reasoning in Large Language Models
+- Methods for enhancing multi-step reasoning and logical analysis
+- Frameworks for complex problem decomposition  
+- Techniques for improving reasoning accuracy and reliability
+- Novel approaches for mathematical and scientific reasoning
 
+## Test-time Techniques for LLMs
+- Test-time scaling algorithms (beam search, tree search etc.)
+- Conformal prediction methods for uncertainty estimation
+- Techniques for improving inference reliability and robustness
 
-2. Complex Reasoning Enhancement for LLMs
+## Paper Selection Criteria
+- Novel mathematical and computational frameworks
+- Quantitative improvements in reasoning and optimization capabilities  
+- Theoretical foundations and formal guarantees
+- Scalable and practical implementation methods
 
-Relevant: Novel methods for enhancing model capabilities in multi-step reasoning, logical analysis, and complex problem decomposition. Emphasis on reasoning frameworks with interpretability guarantees and innovative algorithms that effectively improve reasoning accuracy.
-Not relevant: Methods relying solely on prompting engineering or techniques that do not fundamentally improve model reasoning capabilities.
-
-
-3. Test-time Scaling for LLMs
-
-Relevant: the test-time scaling algorithms of LLMs, scuh as beam search, tree search
-
-
-
-When recommending papers, special attention should be paid to:
-1. Research proposing novel statistical or computational frameworks
-2. Key findings about LLM inference efficiency and quality
-3. Innovative mathematical methods for solving acceleration and scalability challenges
+**Note**: Exclude papers focused solely on prompt engineering or that lack substantial technical innovation.
